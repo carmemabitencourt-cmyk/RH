@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="scroll-smooth">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motor de Inferência | ATLAS Forense</title>
+
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚖️</text></svg>">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;500;700&display=swap');
+
+        :root {
+            --cyan-primary: #22d3ee;
+            --purple-accent: #a855f7;
+            --alert-red: #ef4444;
+            --bg-black: #020408;
+            --panel-bg: rgba(10, 15, 25, 0.9);
+        }
+
+        body {
+            background-color: var(--bg-black);
+            color: #e2e8f0;
+            font-family: 'Space Grotesk', sans-serif;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Background & Scanlines */
+        .grid-bg {
+            position: fixed;
+            inset: 0;
+            background-image: linear-gradient(rgba(34, 211, 238, 0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(34, 211, 238, 0.05) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .scanlines {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 1000;
+            opacity: 0.3;
+        }
+
+        /* Atlas UI Panels */
+        .atlas-panel {
+            background: var(--panel-bg);
+            border: 1px solid rgba(34, 211, 238, 0.1);
+            backdrop-filter: blur(10px);
+            position: relative;
+            transition: border-color 0.3s ease;
+        }
+
+        .atlas-panel::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            width: 15px;
+            height: 15px;
+            border-top: 2px solid rgba(34, 211, 238, 0.5);
+            border-left: 2px solid rgba(34, 211, 238, 0.5);
+        }
+
+        .atlas-panel.crisis {
+            border-color: var(--alert-red);
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.2);
+        }
+
+        /* Sliders */
+        .atlas-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.05);
+            outline: none;
+            cursor: crosshair;
+        }
+
+        .atlas-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 12px;
+            height: 12px;
+            background: var(--cyan-primary);
+            box-shadow: 0 0 10px var(--cyan-primary);
+            border-radius: 2px;
+        }
+
+        .nr7-slider::-webkit-slider-thumb {
+            background: var(--purple-accent);
+            box-shadow: 0 0 10px var(--purple-accent);
+        }
+
+        /* Notification Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: var(--panel-bg);
+            border: 1px solid var(--cyan-primary);
+            padding: 15px 25px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            transform: translateX(200%);
+            transition: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 2000;
+        }
+
+        .toast.active {
+            transform: translateX(0);
+        }
+
+        .xp-gain {
+            animation: floatUp 1s ease-out forwards;
+            position: absolute;
+            color: var(--cyan-primary);
+            font-weight: bold;
+            pointer-events: none;
+        }
+
+        @keyframes floatUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+        }
+
+        /* Nexus Visualizer Enhancement */
+        .nexus-container {
+            position: relative;
+            width: 260px;
+            height: 260px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .nexus-core {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 1px dashed rgba(34, 211, 238, 0.1);
+            position: absolute;
+        }
+
+        .nexus-ring {
+            position: absolute;
+            border-radius: 50%;
+            border: 1px solid transparent;
+            transition: 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ring-1 {
+            inset: 10%;
+            border-top-color: var(--cyan-primary);
+            animation: spin 8s linear infinite;
+        }
+
+        .ring-2 {
+            inset: 20%;
+            border-bottom-color: var(--purple-accent);
+            animation: spin 5s linear infinite reverse;
+        }
+
+        .ring-3 {
+            inset: 30%;
+            border-left-color: var(--cyan-primary);
+            border-right-color: var(--purple-accent);
+            opacity: 0.5;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Glitch Effect */
+        .glitch-active {
+            animation: glitch 0.2s infinite;
+        }
+
+        @keyframes glitch {
+            0% {
+                transform: translate(0);
+            }
+
+            20% {
+                transform: translate(-2px, 2px);
+            }
+
+            40% {
+                transform: translate(-2px, -2px);
+            }
+
+            60% {
+                transform: translate(2px, 2px);
+            }
+
+            80% {
+                transform: translate(2px, -2px);
+            }
+
+            100% {
+                transform: translate(0);
+            }
+        }
+
+        .nav-link {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #94a3b8;
+            transition: 0.3s;
+        }
+
+        .nav-link:hover {
+            color: var(--cyan-primary);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen">
+    <div class="grid-bg"></div>
+    <div class="scanlines"></div>
+
+    <!-- Navigation Header (Consistent with index.html) -->
+    <nav class="p-6 border-b border-white/5 bg-black/40 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <a href="atlas.html"
+                    class="w-8 h-8 border border-cyan-400 flex items-center justify-center font-mono text-cyan-400 text-xs">AT</a>
+                <span class="font-bold tracking-tighter text-lg uppercase">ATLAS <span
+                        class="text-cyan-400">ENGINE</span></span>
+            </div>
+            <div class="hidden md:flex gap-8">
+                <a href="atlas.html" class="nav-link">Mainframe</a>
+                <a href="index.html" class="nav-link">Dashboard</a>
+                <a href="avaliacao.html" class="nav-link text-cyan-400">Engine</a>
+            </div>
+            <div class="hidden md:flex flex-col items-end gap-1">
+                <div class="flex items-center gap-3">
+                    <span id="rank-name" class="font-mono text-[9px] text-cyan-400 uppercase tracking-widest">Rank:
+                        Estagiário Forense</span>
+                    <div class="w-32 h-1.5 bg-white/5 border border-white/10 overflow-hidden">
+                        <div id="xp-bar"
+                            class="h-full bg-cyan-400 w-[10%] shadow-[0_0_8px_var(--cyan-primary)] transition-all duration-500">
+                        </div>
+                    </div>
+                </div>
+                <div class="font-mono text-[8px] text-slate-500 uppercase">Audit_XP: <span id="xp-current">100</span> /
+                    1000</div>
+            </div>
+            <div class="font-mono text-[9px] text-purple-400 animate-pulse uppercase ml-4">
+                Mode: Live_Correlation
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto p-6 md:p-12">
+
+        <!-- Header -->
+        <header class="text-center mb-16">
+            <h1 id="main-title" class="text-4xl md:text-5xl font-bold mb-4 uppercase tracking-tighter">
+                Análise de <span class="text-cyan-400">Nexos</span> Ocupacionais
+            </h1>
+            <p class="max-w-2xl mx-auto text-slate-500 font-mono text-xs md:text-sm uppercase tracking-widest">
+                Protocolo de Inferência Técnica: <span class="text-cyan-400">NR-01</span> <i
+                    class="fas fa-link mx-2"></i> <span class="text-purple-400">NR-07</span>
+            </p>
+        </header>
+
+        <!-- The Difference Engine -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+
+            <!-- LEFT: NR-1 (Environmental Data) -->
+            <section class="col-span-1 md:col-span-4 atlas-panel p-6 md:p-8">
+                <div class="flex justify-between items-center mb-8">
+                    <h2 class="text-lg font-bold text-cyan-400 uppercase tracking-tighter"><i
+                            class="fas fa-database mr-3"></i>Input NR-01</h2>
+                    <span class="font-mono text-[9px] bg-cyan-900/40 text-cyan-400 px-2 py-0.5">ESTRUTURAL</span>
+                </div>
+
+                <div class="space-y-8">
+                    <div>
+                        <div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-slate-400">
+                            <span>Sobrecarga Ergonômica / Prazos</span>
+                            <span id="val-s1" class="text-cyan-400">20%</span>
+                        </div>
+                        <input type="range" class="atlas-slider" id="input-s1" min="0" max="100" value="20"
+                            oninput="updateSystem()">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-slate-400">
+                            <span>Autonomia Decisória (PGR)</span>
+                            <span id="val-s2" class="text-cyan-400">10%</span>
+                        </div>
+                        <input type="range" class="atlas-slider" id="input-s2" min="0" max="100" value="10"
+                            oninput="updateSystem()">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-slate-400">
+                            <span>Cultura de Gestão / Assédio</span>
+                            <span id="val-s3" class="text-cyan-400">5%</span>
+                        </div>
+                        <input type="range" class="atlas-slider" id="input-s3" min="0" max="100" value="5"
+                            oninput="updateSystem()">
+                    </div>
+                </div>
+
+                <div class="mt-12 pt-6 border-t border-white/5">
+                    <div class="text-[9px] font-mono text-slate-500 uppercase">Periculosidade Psicossocial</div>
+                    <div class="text-3xl font-mono text-white mt-1" id="gro-score">0.0</div>
+                </div>
+            </section>
+
+            <!-- CENTER: The Nexus (Computing) -->
+            <section class="col-span-1 md:col-span-4 flex flex-col items-center pt-4">
+                <div class="nexus-container mb-8">
+                    <div class="nexus-core"></div>
+                    <div class="nexus-ring ring-1"></div>
+                    <div class="nexus-ring ring-2"></div>
+                    <div class="nexus-ring ring-3"></div>
+                    <div class="relative z-10 text-center">
+                        <div class="text-[9px] uppercase font-mono text-slate-500 mb-1 tracking-widest">Nexo Causal
+                        </div>
+                        <div id="nexus-value" class="text-5xl font-bold text-white tracking-tighter">0%</div>
+                    </div>
+                </div>
+
+                <div id="diagnosis-card" class="atlas-panel p-6 w-full text-center">
+                    <h3 class="text-[9px] font-mono uppercase tracking-[0.3em] text-slate-500 mb-2 font-bold">
+                        Diagnóstico de Sistema</h3>
+                    <div id="diagnosis-text" class="text-base font-mono text-white mb-4">INICIALIZANDO...</div>
+                    <div class="h-1 w-full bg-slate-900 rounded overflow-hidden">
+                        <div id="risk-bar" class="h-full w-0 bg-cyan-400 transition-all duration-700"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- RIGHT: NR-7 (Clinical Data) -->
+            <section class="col-span-1 md:col-span-4 atlas-panel p-6 md:p-8" border-color="rgba(168, 85, 247, 0.2)">
+                <div class="flex justify-between items-center mb-8">
+                    <h2 class="text-lg font-bold text-purple-400 uppercase tracking-tighter"><i
+                            class="fas fa-stethoscope mr-3"></i>Input NR-07</h2>
+                    <span class="font-mono text-[9px] bg-purple-900/40 text-purple-400 px-2 py-0.5">CLÍNICO</span>
+                </div>
+
+                <div class="space-y-8">
+                    <div>
+                        <div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-slate-400">
+                            <span>Sintomatologia de Ansiedade</span>
+                            <span id="val-c1" class="text-purple-400">LEVE</span>
+                        </div>
+                        <input type="range" class="atlas-slider nr7-slider" id="input-c1" min="0" max="100" value="10"
+                            oninput="updateSystem()">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-slate-400">
+                            <span>Esgotamento (Burnout)</span>
+                            <span id="val-c2" class="text-purple-400">LEVE</span>
+                        </div>
+                        <input type="range" class="atlas-slider nr7-slider" id="input-c2" min="0" max="100" value="5"
+                            oninput="updateSystem()">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[10px] font-mono mb-2 uppercase text-slate-400">
+                            <span>Dias de Afastamento (B91)</span>
+                            <span id="val-c3" class="text-purple-400">0</span>
+                        </div>
+                        <input type="range" class="atlas-slider nr7-slider" id="input-c3" min="0" max="30" value="0"
+                            oninput="updateSystem()">
+                    </div>
+                </div>
+
+                <div class="mt-12 pt-6 border-t border-white/5">
+                    <div class="text-[9px] font-mono text-slate-500 uppercase">Impacto à Saúde do Indivíduo</div>
+                    <div class="text-3xl font-mono text-white mt-1" id="clinical-score">0.0</div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Forensic Insights -->
+        <div class="mt-12 grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div class="col-span-1 md:col-span-5 atlas-panel p-6">
+                <h3
+                    class="text-[10px] font-mono text-cyan-400 mb-6 uppercase tracking-widest border-b border-white/5 pb-2">
+                    Comparativo Dinâmico</h3>
+                <div class="h-[280px]">
+                    <canvas id="gapChart"></canvas>
+                </div>
+            </div>
+
+            <div class="col-span-1 md:col-span-7 atlas-panel p-6">
+                <h3
+                    class="text-[10px] font-mono text-red-500 mb-6 uppercase tracking-widest border-b border-white/5 pb-2">
+                    Projeção de Risco FAP/Finanças</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 h-[280px]">
+                    <div class="flex flex-col justify-center">
+                        <div class="mb-4">
+                            <div class="text-[10px] font-mono text-slate-500 uppercase mb-1">Passivo Estimado em 12
+                                meses</div>
+                            <div id="cost-value" class="text-4xl font-mono text-white">R$ 12.000</div>
+                        </div>
+                        <p class="text-[11px] text-slate-400 leading-relaxed font-mono">
+                            > Análise baseada em frequências de afastamento e probabilidade de litígio trabalhista.
+                            <span class="text-cyan-400">Implemente a Metodologia Atlas para reduzir este valor em até
+                                70%.</span>
+                        </p>
+                    </div>
+                    <canvas id="costChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Technical Report section (New) -->
+        <section id="tech-report" class="mt-12 atlas-panel p-8 hidden animate-in fade-in duration-500">
+            <div class="flex items-center gap-4 mb-6">
+                <div class="w-10 h-10 border border-red-500 flex items-center justify-center text-red-500"><i
+                        class="fas fa-exclamation-triangle"></i></div>
+                <div>
+                    <h2 class="text-lg font-bold uppercase tracking-tight">Nota Técnica Forense</h2>
+                    <p class="text-[10px] font-mono text-slate-500">RELATÓRIO GERADO AUTOMATICAMENTE • SISTEMA ATLAS</p>
+                </div>
+            </div>
+            <div id="report-content" class="text-xs font-mono text-slate-300 leading-relaxed space-y-4">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- Core Engine Logic ---
+        let auditXP = 100;
+        let unlockedAchievements = [];
+
+        const inputs = {
+            s1: document.getElementById('input-s1'),
+            s2: document.getElementById('input-s2'),
+            s3: document.getElementById('input-s3'),
+            c1: document.getElementById('input-c1'),
+            c2: document.getElementById('input-c2'),
+            c3: document.getElementById('input-c3')
+        };
+
+        const displays = {
+            s1: document.getElementById('val-s1'),
+            s2: document.getElementById('val-s2'),
+            s3: document.getElementById('val-s3'),
+            c1: document.getElementById('val-c1'),
+            c2: document.getElementById('val-c2'),
+            c3: document.getElementById('val-c3'),
+            gro: document.getElementById('gro-score'),
+            clin: document.getElementById('clinical-score'),
+            nexus: document.getElementById('nexus-value'),
+            diag: document.getElementById('diagnosis-text'),
+            diagCard: document.getElementById('diagnosis-card'),
+            bar: document.getElementById('risk-bar'),
+            cost: document.getElementById('cost-value'),
+            title: document.getElementById('main-title'),
+            report: document.getElementById('tech-report'),
+            reportContent: document.getElementById('report-content'),
+            xpBar: document.getElementById('xp-bar'),
+            xpCurrent: document.getElementById('xp-current'),
+            rank: document.getElementById('rank-name')
+        };
+
+        function showToast(title, msg, color = "#22d3ee") {
+            const t = document.createElement('div');
+            t.className = "toast active";
+            t.style.borderColor = color;
+            t.innerHTML = `
+                <div class="w-8 h-8 flex items-center justify-center border border-current" style="color: ${color}">
+                    <i class="fas fa-trophy"></i>
+                </div>
+                <div>
+                    <div class="font-bold text-xs uppercase" style="color: ${color}">${title}</div>
+                    <div class="text-[10px] text-slate-400 uppercase font-mono">${msg}</div>
+                </div>
+            `;
+            document.body.appendChild(t);
+            setTimeout(() => { t.classList.remove('active'); setTimeout(() => t.remove(), 500); }, 3000);
+        }
+
+        function gainXP(amount) {
+            auditXP += amount;
+            displays.xpCurrent.textContent = auditXP;
+            displays.xpBar.style.width = (auditXP / 10).toFixed(0) + '%';
+
+            if (auditXP > 500 && displays.rank.textContent.includes('Estagiário')) {
+                displays.rank.textContent = "Rank: Analista de Riscos";
+                showToast("PROMOÇÃO", "RANK UP: ANALISTA DE RISCOS", "#fbbf24");
+            }
+            if (auditXP > 900 && displays.rank.textContent.includes('Analista')) {
+                displays.rank.textContent = "Rank: Arquiteto Forense";
+                showToast("PROMOÇÃO", "RANK UP: ARQUITETO FORENSE", "#a855f7");
+            }
+        }
+
+        let lastHighNexus = false;
+        function updateSystem() {
+            Chart.defaults.color = '#94a3b8';
+            Chart.defaults.font.family = "'JetBrains Mono', monospace";
+            Chart.defaults.font.size = 10;
+
+            const ctxGap = document.getElementById('gapChart').getContext('2d');
+            gapChart = new Chart(ctxGap, {
+                type: 'radar',
+                data: {
+                    labels: ['Ambiente', 'PGR', 'Cultura', 'Saúde', 'Absence'],
+                    datasets: [{
+                        label: 'NR-01 (GRO)',
+                        data: [20, 10, 5, 0, 0],
+                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(34, 211, 238, 0.1)',
+                        borderWidth: 1
+                    }, {
+                        label: 'NR-07 (Dano)',
+                        data: [0, 0, 0, 10, 10],
+                        borderColor: '#a855f7',
+                        backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            suggestedMax: 100,
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            angleLines: { color: 'rgba(255,255,255,0.05)' },
+                            pointLabels: { display: true }
+                        }
+                    },
+                    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
+                }
+            });
+
+            const ctxCost = document.getElementById('costChart').getContext('2d');
+            costChart = new Chart(ctxCost, {
+                type: 'bar',
+                data: {
+                    labels: ['Atual', 'Atlas Opt.'],
+                    datasets: [{
+                        data: [12000, 3600],
+                        backgroundColor: ['#ef4444', '#22d3ee'],
+                        borderRadius: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { display: false },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function updateSystem() {
+            const vS1 = parseInt(inputs.s1.value);
+            const vS2 = parseInt(inputs.s2.value);
+            const vS3 = parseInt(inputs.s3.value);
+            const vC1 = parseInt(inputs.c1.value);
+            const vC2 = parseInt(inputs.c2.value);
+            const vC3 = parseInt(inputs.c3.value);
+
+            displays.s1.textContent = vS1 + '%';
+            displays.s2.textContent = vS2 + '%';
+            displays.s3.textContent = vS3 + '%';
+            displays.c1.textContent = vC1 > 80 ? 'CRÍTICO' : (vC1 > 40 ? 'MODERADO' : 'LEVE');
+            displays.c2.textContent = vC2 > 80 ? 'BURNOUT' : (vC2 > 40 ? 'RISCO' : 'LEVE');
+            displays.c3.textContent = vC3 + ' dias';
+
+            const gro = (vS1 * 0.5) + (vS2 * 0.3) + (vS3 * 0.2);
+            const clinical = (vC1 * 0.3) + (vC2 * 0.3) + (vC3 * 4);
+
+            let nexus = 0;
+            if (gro > 40 && clinical > 30) {
+                nexus = (gro * 0.6) + (clinical * 0.4);
+            } else if (gro < 20 && clinical > 60) {
+                nexus = 15; // External factors likely
+            } else {
+                nexus = Math.min(gro, clinical);
+            }
+            nexus = Math.min(Math.max(nexus + (vC3 * 1.5), 0), 100);
+
+            displays.gro.textContent = gro.toFixed(1);
+            displays.clin.textContent = clinical.toFixed(1);
+            displays.nexus.textContent = Math.round(nexus) + '%';
+            displays.bar.style.width = nexus + '%';
+
+            // Visual State Management
+            if (nexus > 85) {
+                if (!lastHighNexus) {
+                    lastHighNexus = true;
+                    gainXP(150);
+                    showToast("CRÍTICO", "+150 XP: NEXO CAUSAL IDENTIFICADO", "#ef4444");
+                }
+                displays.title.classList.add('glitch-active');
+                displays.diagCard.classList.add('crisis');
+                displays.bar.className = "h-full bg-red-500 animate-pulse";
+                displays.diag.textContent = "NEXO TÉCNICO EVIDENTE (ALTO RISCO)";
+                displays.diag.className = "text-base font-mono text-red-500 font-bold";
+                displays.report.classList.remove('hidden');
+                generateReport(gro, clinical, nexus);
+            } else if (nexus > 50) {
+                displays.title.classList.remove('glitch-active');
+                displays.diagCard.classList.remove('crisis');
+                displays.bar.className = "h-full bg-yellow-500";
+                displays.diag.textContent = "ALERTA: CORRELAÇÃO ADVERSA";
+                displays.diag.className = "text-base font-mono text-yellow-400";
+                displays.report.classList.add('hidden');
+            } else {
+                displays.title.classList.remove('glitch-active');
+                displays.diagCard.classList.remove('crisis');
+                displays.bar.className = "h-full bg-cyan-400";
+                displays.diag.textContent = "RISCO SOB CONTROLE";
+                displays.diag.className = "text-base font-mono text-cyan-400";
+                displays.report.classList.add('hidden');
+            }
+
+            // Financial Calc
+            const baseCost = (clinical * 500) + (nexus * 200);
+            displays.cost.textContent = "R$ " + Math.round(baseCost).toLocaleString();
+
+            // Update Charts
+            if (gapChart) {
+                gapChart.data.datasets[0].data = [vS1, vS2, vS3, 0, 0];
+                gapChart.data.datasets[1].data = [0, 0, 0, vC1, vC3 * 3.3];
+                gapChart.update('none');
+            }
+            if (costChart) {
+                costChart.data.datasets[0].data = [baseCost, baseCost * 0.3];
+                costChart.update('none');
+            }
+        }
+
+        function generateReport(gro, clin, nexus) {
+            displays.reportContent.innerHTML = `
+                <div class="border-l-2 border-red-500 pl-4 py-1">
+                    > [DETECTADO] Inconsistência entre NR-01 (Ambiente: ${gro.toFixed(1)}) e NR-07 (Clínica: ${clin.toFixed(1)}).<br>
+                    > [NTEP] Probabilidade de nexo técnico epidemiológico calculada em ${Math.round(nexus)}%.<br>
+                    > [AÇÃO] Sugerida revisão imediata do PGR (Programa de Gerenciamento de Riscos).<br>
+                    > [ALERTA] Passivo jurídico acumulado detectado em rubricas de absenteísmo compensado.
+                </div>
+            `;
+        }
+
+        // Init
+        window.addEventListener('load', () => {
+            initCharts();
+            updateSystem();
+        });
+
+    </script>
+</body>
+
+</html>
